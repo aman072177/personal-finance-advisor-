@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><span class="badge">Financial Report</span><h1>Your Summary</h1><p>A simple overview of your recorded finances.</p></div></div>
+<section class="stats">
+  <div class="stat"><span>Total Income</span><strong>₹{{ "%.2f"|format(summary.income) }}</strong></div>
+  <div class="stat"><span>Total Expenses</span><strong>₹{{ "%.2f"|format(summary.expenses) }}</strong></div>
+  <div class="stat"><span>Net Savings</span><strong>₹{{ "%.2f"|format(summary.savings) }}</strong></div>
+</section>
+<section class="card">
+  <h2>Category Breakdown</h2>
+  {% if summary.by_category %}
+    {% for category, amount in summary.by_category.items() %}
+      <div class="list-row"><span>{{ category }}</span><b>₹{{ "%.2f"|format(amount) }}</b></div>
+    {% endfor %}
+  {% else %}<p class="muted">No expense data available.</p>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><span class="badge">Dashboard</span><h1>Hello, {{ user.username }} 👋</h1><p>Here is your current financial snapshot.</p></div>
+  <a class="button secondary" href="{{ url_for('report') }}">View Report</a>
+</div>
+
+<section class="stats">
+  <div class="stat"><span>Income</span><strong>₹{{ "%.2f"|format(summary.income) }}</strong></div>
+  <div class="stat"><span>Expenses</span><strong>₹{{ "%.2f"|format(summary.expenses) }}</strong></div>
+  <div class="stat"><span>Savings</span><strong>₹{{ "%.2f"|format(summary.savings) }}</strong></div>
+</section>
+
+<div class="grid two">
+  <section class="card">
+    <h2>Add Income</h2>
+    <form method="post" action="{{ url_for('add_income') }}" class="form-grid">
+      <label>Amount<input type="number" name="amount" step="0.01" min="0.01" required></label>
+      <label>Source<input name="source" placeholder="Salary"></label>
+      <label>Date<input type="date" name="entry_date"></label>
+      <button class="button" type="submit">Add Income</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Add Expense</h2>
+    <form method="post" action="{{ url_for('add_expense') }}" class="form-grid">
+      <label>Amount<input type="number" name="amount" step="0.01" min="0.01" required></label>
+      <label>Category
+        <select name="category">
+          {% for c in ["Food","Rent","Transport","Entertainment","Education","Healthcare","Shopping","Bills","Other"] %}
+          <option>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Description<input name="description" placeholder="Optional"></label>
+      <label>Date<input type="date" name="entry_date"></label>
+      <button class="button" type="submit">Add Expense</button>
+    </form>
+  </section>
+</div>
+
+<div class="grid two">
+  <section class="card">
+    <h2>Set a Budget</h2>
+    <form method="post" action="{{ url_for('add_budget') }}" class="form-grid">
+      <label>Category<input name="category" placeholder="Food" required></label>
+      <label>Monthly limit<input type="number" name="amount" step="0.01" min="0.01" required></label>
+      <button class="button" type="submit">Save Budget</button>
+    </form>
+    {% if budgets %}
+      <div class="list">
+      {% for category, budget in budgets.items() %}
+        <div class="list-row"><span>{{ category }}</span><b>₹{{ "%.2f"|format(budget) }}</b></div>
+      {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card ai-card">
+    <h2>🤖 AI Financial Advisor</h2>
+    <p>Analyze your current numbers and get personalized budgeting suggestions.</p>
+    <button class="button" id="adviceBtn">Get AI Advice</button>
+    <div id="advice" class="advice-box">Your advice will appear here.</div>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Spending by Category</h2>
+  {% if categories %}
+    {% for category, amount in categories %}
+      <div class="bar-row">
+        <span>{{ category }}</span>
+        <div class="bar"><i style="width: {{ ((amount / summary.expenses * 100) if summary.expenses else 0)|round(1) }}%"></i></div>
+        <b>₹{{ "%.0f"|format(amount) }}</b>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No expenses yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Recent Expenses</h2>
+  {% if recent_expenses %}
+  <div class="table-wrap"><table>
+    <tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr>
+    {% for item in recent_expenses %}
+    <tr><td>{{ item.entry_date }}</td><td>{{ item.category }}</td><td>{{ item.description or "—" }}</td><td>₹{{ "%.2f"|format(item.amount) }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">No expenses yet.</p>{% endif %}
+</section>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}

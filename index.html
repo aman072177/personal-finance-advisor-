@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <span class="badge">AI-Powered Personal Finance</span>
+    <h1>Understand your money. Build better habits.</h1>
+    <p>Track income and expenses, set budgets, see your savings, and get personalized financial guidance.</p>
+    <div class="actions">
+      <a class="button" href="{{ url_for('register') }}">Create Account</a>
+      <a class="button secondary" href="{{ url_for('login') }}">Login</a>
+    </div>
+  </div>
+  <div class="hero-card">
+    <div class="mini-title">Monthly Snapshot</div>
+    <div class="mini-number">₹30,000</div>
+    <div class="mini-label">Example income</div>
+    <div class="progress"><span></span></div>
+    <small>Track → Analyze → Save</small>
+  </div>
+</section>
+<section class="features">
+  <div><b>📊 Dashboard</b><span>See income, expenses and savings.</span></div>
+  <div><b>🎯 Budgets</b><span>Set category-based spending limits.</span></div>
+  <div><b>🤖 AI Advice</b><span>Get practical recommendations from Gemini.</span></div>
+</section>
+{% endblock %}

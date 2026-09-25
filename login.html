@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-card">
+  <h1>Welcome back</h1>
+  <p>Log in to your finance dashboard.</p>
+  <form method="post">
+    <label>Username<input name="username" required></label>
+    <label>Password<input type="password" name="password" required></label>
+    <button class="button" type="submit">Login</button>
+  </form>
+  <p class="muted">No account? <a href="{{ url_for('register') }}">Create one</a></p>
+</div>
+{% endblock %}
