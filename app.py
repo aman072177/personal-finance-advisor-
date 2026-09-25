@@ -1,283 +1,211 @@
 import os
+import sqlite3
 from datetime import date
 from functools import wraps
 
-from dotenv import load_dotenv
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import check_password_hash, generate_password_hash
-
-load_dotenv()
+from flask import Flask, request, redirect, url_for, session, render_template_string, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret-key")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL", "sqlite:///finance.db"
-).replace("postgres://", "postgresql://", 1)
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-db = SQLAlchemy(app)
+app.secret_key = os.getenv("SECRET_KEY", "college-demo-secret-change-me")
+DB = os.getenv("DB_PATH", "finance.db")
 
-try:
-    from google import genai
-except ImportError:
-    genai = None
+CATEGORIES = ["Food", "Travel", "Shopping", "Bills", "Education", "Health", "Entertainment", "Other"]
 
+def db():
+    con = sqlite3.connect(DB)
+    con.row_factory = sqlite3.Row
+    return con
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    incomes = db.relationship("Income", backref="user", lazy=True, cascade="all, delete-orphan")
-    expenses = db.relationship("Expense", backref="user", lazy=True, cascade="all, delete-orphan")
-    budgets = db.relationship("Budget", backref="user", lazy=True, cascade="all, delete-orphan")
+def init_db():
+    con = db()
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS incomes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        source TEXT NOT NULL,
+        entry_date TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT NOT NULL,
+        note TEXT,
+        entry_date TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        amount REAL NOT NULL
+    );
+    """)
+    con.commit()
+    con.close()
 
+init_db()
 
-class Income(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    source = db.Column(db.String(100), nullable=False)
-    entry_date = db.Column(db.Date, nullable=False, default=date.today)
-
-
-class Expense(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(80), nullable=False)
-    description = db.Column(db.String(200), default="")
-    entry_date = db.Column(db.Date, nullable=False, default=date.today)
-
-
-class Budget(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    category = db.Column(db.String(80), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-
-
-with app.app_context():
-    db.create_all()
-
-
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
         if "user_id" not in session:
             return redirect(url_for("login"))
-        return view(*args, **kwargs)
-    return wrapped
+        return fn(*args, **kwargs)
+    return wrapper
 
+STYLE = """
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#182230}
+nav{background:#172033;color:white;padding:15px 5%;display:flex;justify-content:space-between;align-items:center}
+nav a{color:white;text-decoration:none;margin-left:16px}.brand{font-weight:700;font-size:20px}
+.container{max-width:1050px;margin:28px auto;padding:0 18px}
+.hero{background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border-radius:18px;padding:28px;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
+.card{background:white;border-radius:14px;padding:20px;box-shadow:0 3px 14px #00000012;margin-bottom:16px}
+.stat{font-size:28px;font-weight:700;margin-top:8px}
+form{display:grid;gap:10px}input,select,button{padding:12px;border:1px solid #d5dce5;border-radius:9px;font-size:15px}
+button{background:#2563eb;color:white;border:0;cursor:pointer;font-weight:600}.danger{background:#dc2626}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #e5e7eb}
+.alert{background:#fff7ed;padding:12px;border-radius:9px;margin-bottom:12px}
+a.btn{display:inline-block;background:white;color:#2563eb;padding:10px 15px;border-radius:9px;text-decoration:none;font-weight:600}
+small{color:#667085}.error{color:#b42318}
+@media(max-width:600px){nav{flex-direction:column;gap:10px;align-items:flex-start}nav a{margin:0 12px 0 0}.container{margin-top:18px}}
+</style>
+"""
 
-def current_user():
-    return db.session.get(User, session.get("user_id"))
+BASE = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}}</title>""" + STYLE + """</head><body>
+<nav><div class="brand">💰 Finance Advisor</div><div>
+{% if session.get('user_id') %}<a href="{{url_for('dashboard')}}">Dashboard</a><a href="{{url_for('logout')}}">Logout</a>{% else %}<a href="{{url_for('login')}}">Login</a><a href="{{url_for('register')}}">Register</a>{% endif %}
+</div></nav><main class="container">
+{% with messages=get_flashed_messages() %}{% for m in messages %}<div class="alert">{{m}}</div>{% endfor %}{% endwith %}
+{{content|safe}}</main></body></html>"""
 
-
-def financial_summary(user):
-    income = sum(x.amount for x in user.incomes)
-    expense = sum(x.amount for x in user.expenses)
-    savings = income - expense
-    by_category = {}
-    for item in user.expenses:
-        by_category[item.category] = by_category.get(item.category, 0) + item.amount
-    return {
-        "income": round(income, 2),
-        "expenses": round(expense, 2),
-        "savings": round(savings, 2),
-        "by_category": by_category,
-    }
-
+def page(title, content):
+    return render_template_string(BASE, title=title, content=content)
 
 @app.route("/")
-def index():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-    return render_template("index.html")
+def home():
+    if session.get("user_id"): return redirect(url_for("dashboard"))
+    return page("Personal Finance Advisor", """
+    <div class="hero"><h1>Personal Finance Advisor Bot</h1>
+    <p>Track income, expenses, budgets and savings in one simple dashboard.</p>
+    <a class="btn" href="/register">Get Started</a></div>
+    <div class="grid"><div class="card"><h3>📊 Dashboard</h3><p>See income, spending and savings.</p></div>
+    <div class="card"><h3>💸 Expenses</h3><p>Record expenses by category.</p></div>
+    <div class="card"><h3>🤖 AI Advice</h3><p>Get Gemini-powered financial suggestions when an API key is configured.</p></div></div>""")
 
-
-@app.route("/register", methods=["GET", "POST"])
+@app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        if not username or len(password) < 6:
-            flash("Enter a username and a password of at least 6 characters.", "error")
-            return render_template("register.html")
-        if User.query.filter_by(username=username).first():
-            flash("That username already exists.", "error")
-            return render_template("register.html")
-        user = User(username=username, password_hash=generate_password_hash(password))
-        db.session.add(user)
-        db.session.commit()
-        flash("Account created. You can now log in.", "success")
-        return redirect(url_for("login"))
-    return render_template("register.html")
+        username=request.form["username"].strip()
+        password=request.form["password"]
+        if not username or not password:
+            flash("Username and password are required.")
+        else:
+            con=db()
+            try:
+                con.execute("INSERT INTO users(username,password) VALUES(?,?)",(username,generate_password_hash(password)))
+                con.commit()
+                flash("Registration successful. Please login.")
+                return redirect(url_for("login"))
+            except sqlite3.IntegrityError:
+                flash("Username already exists.")
+            finally: con.close()
+    return page("Register","""<div class="card"><h2>Create account</h2><form method="post">
+    <input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required>
+    <button>Create Account</button></form></div>""")
 
-
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password_hash, password):
-            session.clear()
-            session["user_id"] = user.id
-            return redirect(url_for("dashboard"))
-        flash("Invalid username or password.", "error")
-    return render_template("login.html")
-
+    if request.method=="POST":
+        con=db(); u=con.execute("SELECT * FROM users WHERE username=?",(request.form["username"].strip(),)).fetchone(); con.close()
+        if u and check_password_hash(u["password"],request.form["password"]):
+            session["user_id"]=u["id"]; session["username"]=u["username"]; return redirect(url_for("dashboard"))
+        flash("Invalid username or password.")
+    return page("Login","""<div class="card"><h2>Login</h2><form method="post">
+    <input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required>
+    <button>Login</button></form></div>""")
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    return redirect(url_for("index"))
+    session.clear(); return redirect(url_for("home"))
 
+@app.route("/income", methods=["POST"])
+@login_required
+def income():
+    amount=float(request.form["amount"]); source=request.form["source"].strip()
+    con=db(); con.execute("INSERT INTO incomes(user_id,amount,source,entry_date) VALUES(?,?,?,?)",(session["user_id"],amount,source,date.today().isoformat())); con.commit(); con.close()
+    flash("Income added."); return redirect(url_for("dashboard"))
+
+@app.route("/expense", methods=["POST"])
+@login_required
+def expense():
+    amount=float(request.form["amount"]); category=request.form["category"]; note=request.form.get("note","")
+    con=db(); con.execute("INSERT INTO expenses(user_id,amount,category,note,entry_date) VALUES(?,?,?,?,?)",(session["user_id"],amount,category,note,date.today().isoformat())); con.commit(); con.close()
+    flash("Expense added."); return redirect(url_for("dashboard"))
+
+@app.route("/budget", methods=["POST"])
+@login_required
+def budget():
+    category=request.form["category"]; amount=float(request.form["amount"])
+    con=db(); old=con.execute("SELECT id FROM budgets WHERE user_id=? AND category=?",(session["user_id"],category)).fetchone()
+    if old: con.execute("UPDATE budgets SET amount=? WHERE id=?",(amount,old["id"]))
+    else: con.execute("INSERT INTO budgets(user_id,category,amount) VALUES(?,?,?)",(session["user_id"],category,amount))
+    con.commit(); con.close(); flash("Budget saved."); return redirect(url_for("dashboard"))
 
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    user = current_user()
-    summary = financial_summary(user)
-    categories = sorted(summary["by_category"].items(), key=lambda x: x[1], reverse=True)
-    budgets = {b.category: b.amount for b in user.budgets}
-    recent_expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.entry_date.desc(), Expense.id.desc()).limit(8).all()
-    recent_income = Income.query.filter_by(user_id=user.id).order_by(Income.entry_date.desc(), Income.id.desc()).limit(5).all()
-    return render_template(
-        "dashboard.html",
-        user=user,
-        summary=summary,
-        categories=categories,
-        budgets=budgets,
-        recent_expenses=recent_expenses,
-        recent_income=recent_income,
-    )
+    uid=session["user_id"]; con=db()
+    inc=con.execute("SELECT COALESCE(SUM(amount),0) x FROM incomes WHERE user_id=?",(uid,)).fetchone()["x"]
+    exp=con.execute("SELECT COALESCE(SUM(amount),0) x FROM expenses WHERE user_id=?",(uid,)).fetchone()["x"]
+    budgets=con.execute("SELECT * FROM budgets WHERE user_id=? ORDER BY category",(uid,)).fetchall()
+    recent=con.execute("SELECT * FROM expenses WHERE user_id=? ORDER BY id DESC LIMIT 8",(uid,)).fetchall()
+    overs=[]
+    for b in budgets:
+        spent=con.execute("SELECT COALESCE(SUM(amount),0) x FROM expenses WHERE user_id=? AND category=?",(uid,b["category"])).fetchone()["x"]
+        if spent>b["amount"]: overs.append((b["category"],spent,b["amount"]))
+    con.close(); savings=inc-exp
+    advice="Your spending is within the recorded budgets." if not overs else "Overspending detected in: "+", ".join(x[0] for x in overs)+". Consider reducing non-essential spending."
+    content=render_template_string("""<div class="hero"><h1>Hello, {{name}} 👋</h1><p>Personal Finance Dashboard</p></div>
+    <div class="grid"><div class="card"><small>Total Income</small><div class="stat">₹{{"%.2f"|format(inc)}}</div></div>
+    <div class="card"><small>Total Expenses</small><div class="stat">₹{{"%.2f"|format(exp)}}</div></div>
+    <div class="card"><small>Savings</small><div class="stat">₹{{"%.2f"|format(savings)}}</div></div></div>
+    <div class="grid"><div class="card"><h2>Add Income</h2><form method="post" action="/income"><input name="amount" type="number" step="0.01" placeholder="Amount" required><input name="source" placeholder="Salary / Freelance" required><button>Add Income</button></form></div>
+    <div class="card"><h2>Add Expense</h2><form method="post" action="/expense"><input name="amount" type="number" step="0.01" placeholder="Amount" required><select name="category">{% for c in cats %}<option>{{c}}</option>{% endfor %}</select><input name="note" placeholder="Note"><button>Add Expense</button></form></div>
+    <div class="card"><h2>Set Budget</h2><form method="post" action="/budget"><select name="category">{% for c in cats %}<option>{{c}}</option>{% endfor %}</select><input name="amount" type="number" step="0.01" placeholder="Monthly budget" required><button>Save Budget</button></form></div></div>
+    <div class="card"><h2>🤖 Financial Advice</h2><p>{{advice}}</p><form method="post" action="/api/advice"><button>Generate Gemini Advice</button></form></div>
+    {% if overs %}<div class="card"><h2>⚠️ Overspending</h2>{% for x in overs %}<p>{{x[0]}}: ₹{{"%.2f"|format(x[1])}} spent vs ₹{{"%.2f"|format(x[2])}} budget</p>{% endfor %}</div>{% endif %}
+    <div class="card"><h2>Recent Expenses</h2><table><tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th></tr>{% for e in recent %}<tr><td>{{e.entry_date}}</td><td>{{e.category}}</td><td>₹{{"%.2f"|format(e.amount)}}</td><td>{{e.note}}</td></tr>{% endfor %}</table></div>""",name=session["username"],inc=inc,exp=exp,savings=savings,cats=CATEGORIES,advice=advice,overs=overs,recent=recent)
+    return page("Dashboard",content)
 
-
-@app.route("/income", methods=["POST"])
-@login_required
-def add_income():
-    try:
-        amount = float(request.form["amount"])
-        if amount <= 0:
-            raise ValueError
-    except (KeyError, ValueError):
-        flash("Enter a valid income amount.", "error")
-        return redirect(url_for("dashboard"))
-    source = request.form.get("source", "Other").strip() or "Other"
-    entry_date = request.form.get("entry_date") or date.today().isoformat()
-    item = Income(user_id=session["user_id"], amount=amount, source=source, entry_date=date.fromisoformat(entry_date))
-    db.session.add(item)
-    db.session.commit()
-    flash("Income added.", "success")
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/expense", methods=["POST"])
-@login_required
-def add_expense():
-    try:
-        amount = float(request.form["amount"])
-        if amount <= 0:
-            raise ValueError
-    except (KeyError, ValueError):
-        flash("Enter a valid expense amount.", "error")
-        return redirect(url_for("dashboard"))
-    category = request.form.get("category", "Other").strip() or "Other"
-    description = request.form.get("description", "").strip()
-    entry_date = request.form.get("entry_date") or date.today().isoformat()
-    item = Expense(
-        user_id=session["user_id"],
-        amount=amount,
-        category=category,
-        description=description,
-        entry_date=date.fromisoformat(entry_date),
-    )
-    db.session.add(item)
-    db.session.commit()
-    flash("Expense added.", "success")
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/budget", methods=["POST"])
-@login_required
-def add_budget():
-    category = request.form.get("category", "").strip()
-    try:
-        amount = float(request.form["amount"])
-        if not category or amount <= 0:
-            raise ValueError
-    except (KeyError, ValueError):
-        flash("Enter a valid category and budget.", "error")
-        return redirect(url_for("dashboard"))
-
-    budget = Budget.query.filter_by(user_id=session["user_id"], category=category).first()
-    if budget:
-        budget.amount = amount
-    else:
-        db.session.add(Budget(user_id=session["user_id"], category=category, amount=amount))
-    db.session.commit()
-    flash("Budget saved.", "success")
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/api/advice")
+@app.route("/api/advice", methods=["POST"])
 @login_required
 def api_advice():
-    user = current_user()
-    summary = financial_summary(user)
-    budgets = {b.category: b.amount for b in user.budgets}
-    overspending = {
-        category: round(amount - budgets[category], 2)
-        for category, amount in summary["by_category"].items()
-        if category in budgets and amount > budgets[category]
-    }
-
-    fallback = (
-        f"You earned ₹{summary['income']:.2f} and spent ₹{summary['expenses']:.2f}. "
-        f"Your current savings are ₹{summary['savings']:.2f}. "
-    )
-    if overspending:
-        fallback += "You are over budget in: " + ", ".join(overspending.keys()) + ". "
-    if summary["savings"] > 0:
-        fallback += "Consider setting aside part of your savings as an emergency fund."
+    con=db(); uid=session["user_id"]
+    inc=con.execute("SELECT COALESCE(SUM(amount),0) x FROM incomes WHERE user_id=?",(uid,)).fetchone()["x"]
+    exp=con.execute("SELECT COALESCE(SUM(amount),0) x FROM expenses WHERE user_id=?",(uid,)).fetchone()["x"]
+    rows=con.execute("SELECT category,COALESCE(SUM(amount),0) spent FROM expenses WHERE user_id=? GROUP BY category ORDER BY spent DESC",(uid,)).fetchall(); con.close()
+    key=os.getenv("GEMINI_API_KEY")
+    advice=None
+    if key:
+        try:
+            from google import genai
+            client=genai.Client(api_key=key)
+            prompt=f"Give concise educational personal-finance advice. Income total ₹{inc:.2f}, expenses ₹{exp:.2f}, categories: {[(r['category'],round(r['spent'],2)) for r in rows]}. Mention savings and practical budget steps. Do not give investment guarantees."
+            advice=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-2.5-flash"),contents=prompt).text
+        except Exception:
+            advice="Gemini could not be reached right now. Basic rule-based advice: track expenses weekly, keep a budget for each category, and aim to save part of your income."
     else:
-        fallback += "Try reducing non-essential expenses and setting a small weekly savings target."
+        advice="Gemini API key is not configured yet. Basic advice: review your biggest spending category, set a realistic budget, and try to save a fixed part of every income."
+    return page("AI Advice",f"""<div class="card"><h2>🤖 AI Financial Advice</h2><p>{advice}</p><a href="/dashboard">← Back to Dashboard</a></div>""")
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or genai is None:
-        return jsonify({"advice": fallback, "ai": False})
-
-    prompt = f"""
-You are a personal finance assistant. Give practical, non-judgmental budgeting guidance.
-Do not recommend specific financial products or investments.
-User summary:
-Income: ₹{summary['income']}
-Expenses: ₹{summary['expenses']}
-Savings: ₹{summary['savings']}
-Expenses by category: {summary['by_category']}
-Budgets: {budgets}
-Overspending: {overspending}
-Give 4 short bullet points and one next-month savings target.
-"""
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-            contents=prompt,
-        )
-        return jsonify({"advice": response.text, "ai": True})
-    except Exception:
-        return jsonify({"advice": fallback, "ai": False})
-
-
-@app.route("/report")
-@login_required
-def report():
-    user = current_user()
-    summary = financial_summary(user)
-    return render_template("report.html", user=user, summary=summary)
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=os.getenv("FLASK_DEBUG") == "1")
+if __name__=="__main__":
+    app.run(host="0.0.0.0",port=int(os.getenv("PORT",5000)),debug=False)
