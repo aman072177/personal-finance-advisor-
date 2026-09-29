@@ -202,7 +202,7 @@ def api_advice():
             prompt=f"Give concise educational personal-finance advice. Income total ₹{inc:.2f}, expenses ₹{exp:.2f}, categories: {[(r['category'],round(r['spent'],2)) for r in rows]}. Mention savings and practical budget steps. Do not give investment guarantees."
             advice=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-2.5-flash"),contents=prompt).text
         except Exception as e:
-            advice="Gemini could not be reached right now. Basic rule-based advice: track expenses weekly, keep a budget for each category, and aim to save part of your income."
+            advice=f"Gemini error: {e}"
     else:
         advice="Gemini API key is not configured yet. Basic advice: review your biggest spending category, set a realistic budget, and try to save a fixed part of every income."
     return page("AI Advice",f"""<div class="card"><h2>🤖 AI Financial Advice</h2><p>{advice}</p><a href="/dashboard">← Back to Dashboard</a></div>""")
