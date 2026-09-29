@@ -200,7 +200,7 @@ def api_advice():
             from google import genai
             client=genai.Client(api_key=key)
             prompt=f"Give concise educational personal-finance advice. Income total ₹{inc:.2f}, expenses ₹{exp:.2f}, categories: {[(r['category'],round(r['spent'],2)) for r in rows]}. Mention savings and practical budget steps. Do not give investment guarantees."
-            advice=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-2.5-flash"),contents=prompt).text
+            advice=client.models.generate_content(model=os.getenv("GEMINI_MODEL","gemini-3.8-flash"),contents=prompt).text
         except Exception as e:
             advice=f"Gemini error: {e}"
     else:
