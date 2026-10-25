@@ -1,5 +1,9 @@
 # Personal Finance Advisor Bot
 
+Demo Link : https://personal-finance-advisor-kwkk.onrender.com/
+
+Full Document : https://1drv.ms/w/c/ffa04e4c624d533b/IQARg0oTKeI_T7xDkI34yoxjAS0ZAfggQ1c-6HKRuupCOKo?e=tG6Kcv
+
 Phone-friendly college project using Flask, SQLite and optional Gemini AI.
 
 ## Deploy on Render
